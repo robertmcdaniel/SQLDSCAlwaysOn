@@ -1,0 +1,114 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+    "parameters": {
+        "agsInfo": {
+            "value": [
+               {
+                    "agName": "AGABC810",
+                    "listenerName": "DSCA20VNNABC810",
+                    "primaryReplicaName": "DSCA20NODABC810",
+                    "secondaryReplicaName": "",
+                    "sqlPort": 1433,
+                    "probePort": 59990,
+                    "enableFloatingIP": true,
+                    "loadDistribution": "Default"
+               },
+               {
+                    "agName": "AGABC830",
+                    "listenerName": "DSCA20VNNABC830",
+                    "primaryReplicaName": "DSCA20NODABC830",
+                    "secondaryReplicaName": "DSCA20NODABC810",
+                    "sqlPort": 1433,
+                    "probePort": 59991,
+                    "enableFloatingIP": true,
+                    "loadDistribution": "Default"
+               }
+            ]
+        },
+        "vMsInfo": {
+            "value": [
+               {
+                    "name": "DSCA20NODABC810",
+                    "sqlRole": "PrimaryNode1",
+                    "location": "USGovVirginia",
+                    "drNode": "false"
+               },
+               {
+                    "name": "DSCA20NODABC830",
+                    "sqlRole": "PrimaryNode2",
+                    "location": "USGovVirginia",
+                    "drNode": "false"
+               },
+               {
+                   "name": "DSCA20NODABC840",
+                   "sqlRole": "HaNode1",
+                   "location": "USGovVirginia",
+                   "drNode": "false"
+               }
+            ]
+        },
+        "dataDiskInfo": {
+            "value": [
+               {
+                    "label": "DATA",
+                    "caching": "ReadOnly",
+                    "diskSizeGB": 512,
+                    "tier": "P20"
+               },
+               {
+                    "label": "TEMPDB",
+                    "caching": "ReadOnly",
+                    "diskSizeGB": 128,
+                    "tier": "P10"
+               },
+               {
+                    "label": "APPS",
+                    "caching": "ReadOnly",
+                    "diskSizeGB": 64,
+                    "tier": "P6"
+               },
+               {
+                    "label": "LOG",
+                    "caching": "None",
+                    "diskSizeGB": 128,
+                    "tier": "P10"
+               }
+            ]
+        },
+        "storageAccountType": {"value": "Standard_LRS"},
+        "diskSku": {"value": "Premium_LRS"},
+        "vmSize": { "value": "Standard_DS3_v2" },
+        "ABCAdminGroup": { "value": "##\\CldWinS_ABC_Admin_Dev" },
+        "domainJoinUser": { "value": "##\\DSCA20SQLABCSVC2DEV" },
+        "domainJoinPassword": {
+            "reference": {
+                "keyVault": { "id": "/subscriptions/????????????????????????????????????/resourceGroups/ABC-PROD-INT-EAST-MGMT-RG/providers/Microsoft.KeyVault/vaults/abc-mgmtkv-prod" },
+                "secretName": "DSCA20SQLABCSVC2DEV"
+            }
+        },
+        "drNode":{ "value": false },
+        "gMsaSqlGroupName": { "value": "vaecwinc_azure_ABC_gms_dev" },
+        "localAdminUser": { "value": "##_LAA" },
+        "localAdminPassword": {
+            "reference": {
+                "keyVault": { "id": "/subscriptions/????????????????????????????????????/resourceGroups/ABC-PROD-INT-EAST-MGMT-RG/providers/Microsoft.KeyVault/vaults/abc-mgmtkv-prod" },
+                "secretName": "ABCInstaller"
+            }
+        },
+        
+        "sqlAdminUser": { "value": "##\\DSCA20SQLABCSVC2DEV" },
+        "sqlAdminPassword": {
+            "reference": {
+                "keyVault": { "id": "/subscriptions/????????????????????????????????????/resourceGroups/ABC-PROD-INT-EAST-MGMT-RG/providers/Microsoft.KeyVault/vaults/abc-mgmtkv-prod" },
+                "secretName": "DSCA20SQLABCSVC2DEV"
+            }
+        },
+        "sqlAgentUser": { "value": "##\\DSCA20SABCGMS1DV$" },
+        "sqlSvcUser": { "value": "##\\DSCA20SABCGMS2DV$" },
+        "sqlSku": {"value": "SQLDEV"},
+        "prRegion": { "value": "EAST" },
+        "drRegion": { "value": "SOUTH" },
+        "ABCSystemTag": { "value": "ABC System" }
+    }
+}

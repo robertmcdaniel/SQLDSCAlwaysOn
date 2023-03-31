@@ -1,0 +1,173 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "agsInfoWithIps": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of AG information to create the AGs"
+            }
+        },
+        "automationAccountLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "Automation Account location (VA, TX, etc)"
+            }
+        },
+        "clusterName": {
+            "type": "string",
+            "metadata": {
+                "description": "Cluster Computer Named Object"
+            }
+        },
+        "automationAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Automation Account"
+            }
+        },
+        "compileJobsGuid": {
+            "type": "array",
+            "defaultValue": [
+                "[newGuid()]",
+                "[newGuid()]",
+                "[newGuid()]",
+                "[newGuid()]"
+            ],
+            "metadata": {
+                "description": "A new GUID used to identify the compile job for nodes configurations"
+            }
+        },
+        "configurationName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the DSC Configuration to be used"
+            }
+        },
+        "deploymentStorageAccountSqlWitnessName": {
+            "type": "string",
+            "metadata": {
+                "description": "Storage Account Name that will be used for the SQL Cloud Witness"
+            }
+        },
+        "dscConfigurationFileUri": {
+            "type": "string",
+            "metadata": {
+                "description": "URI for the DSC Configuration PowerShell script"
+            }
+        },
+        "drSqlListenerSubnet": {
+            "type": "string",
+            "metadata": {
+                "description": "DR SQL Load Balancer listener subnet"
+            }
+        },
+        "resourceGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "Resource Group we are deploying resources into"
+            }
+        },
+        "sqlListenerSubnet": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Load Balancer listener subnet"
+            }
+        },
+        "sqlVmNames": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of SQL Server VM names"
+            }
+        },
+        "targetOuPath": {
+            "type": "string",
+            "metadata": {
+                "description": "OU the machine will be moved into after deployment"
+            }
+        },
+        "vMsInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of server names and other metadata for SQL"
+            }
+        }
+    },
+    "variables": {
+    },
+    "resources": [
+        {
+            "name": "[parameters('automationAccountName')]",
+            "type": "Microsoft.Automation/automationAccounts",
+            "apiversion": "2018-01-15",
+            "location": "[parameters('automationAccountLocation')]",
+            "comments": "Automation account for OAL",
+            "properties": {
+                "sku": {
+                    "name": "Basic",
+                    "family": null,
+                    "capacity": null
+                }
+            },
+            "resources": [
+                {
+                    "name": "[parameters('configurationName')]",
+                    "type": "configurations",
+                    "apiVersion": "2018-01-15",
+                    "location": "[parameters('automationAccountLocation')]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "state": "Published",
+                        "overwrite": "true",
+                        "source": {
+                            "type": "uri",
+                            "value": "[parameters('dscConfigurationFileUri')]"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "[concat(parameters('automationAccountName'), '/', parameters('compileJobsGuid')[copyIndex()])]",
+            "type": "Microsoft.Automation/automationAccounts/compilationjobs",
+            "apiVersion": "2018-01-15",
+            "location": "[parameters('automationAccountLocation')]",
+            "copy": {
+                "count": "[length(parameters('vmsInfo'))]",
+                "name": "sqlVmLoop",
+                "mode": "serial"
+            },
+            "tags": {},
+            "dependsOn": [
+                "[parameters('AutomationAccountName')]",
+                "[concat('Microsoft.Automation/automationAccounts/', parameters('AutomationAccountName'), '/configurations/', parameters('configurationName'))]"
+            ],
+            "properties": {
+                "configuration": {
+                    "name": "[parameters('configurationName')]"
+                },
+                "parameters": {
+                    "configurationData": "[concat('{\"AllNodes\":[',
+                        '{\"NodeName\":\"', parameters('vmsInfo')[0].Name, '\",\"Role\":\"', parameters('vmsInfo')[0].sqlRole, '\"},',
+                        '{\"NodeName\":\"', parameters('vmsInfo')[1].Name, '\",\"Role\":\"', parameters('vmsInfo')[1].sqlRole, '\"}',
+                        if(equals(length(parameters('vmsInfo')), 3), concat(',{\"NodeName\":\"', parameters('vmsInfo')[2].Name, '\",\"Role\":\"', parameters('vmsInfo')[2].sqlRole, '\"}'), ''),
+                        if(equals(length(parameters('vmsInfo')), 4), concat(',{\"NodeName\":\"', parameters('vmsInfo')[2].Name, '\",\"Role\":\"', parameters('vmsInfo')[2].sqlRole, '\"},{\"NodeName\":\"', parameters('vmsInfo')[3].Name, '\",\"Role\":\"', parameters('vmsInfo')[3].sqlRole, '\"}'), ''),
+                        '],\"NonNodeData\":{',
+                        '\"agsInfoWithIps\":', string(parameters('agsInfoWithIps')), 
+                        ',\"sqlVmNames\":', string(parameters('sqlVmNames')),
+                        ',\"witnessStorageBlobEndpoint\":\"', reference(resourceId(parameters('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountSqlWitnessName')), '2018-07-01').primaryEndpoints.blob,
+                        '\",\"witnessStorageAccountKey\":\"', listKeys(resourceId(parameters('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountSqlWitnessName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value,
+                        '\",\"targetOuPath\":\"', parameters('targetOuPath'),
+                        '\",\"clusterName\":\"', parameters('clusterName'),
+                        '\",\"sqlListenerSubnet\":\"', parameters('sqlListenerSubnet'), 
+                        '\",\"drSqlListenerSubnet\":\"', parameters('drSqlListenerSubnet'),
+                        '\"}}')]"
+                }
+            }
+        }
+    ],
+    "outputs": {
+    }
+}

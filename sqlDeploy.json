@@ -1,0 +1,740 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "aesAdminGroup": {
+            "type": "string",
+            "metadata": {
+                "description": "Admin Group to be used to manage the servers"
+            }
+        },
+        "agsInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of AG information to create the AGs"
+            }
+        },
+        "dataDiskInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of disks information to be used when creating the VMs"
+            }
+        },
+        "deploymentStorageAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Storage Account to be used for this deployment.  It will contain DSC configurations, nested templates, etc."
+            }
+        },
+        "deploymentStorageAccountSasToken": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SAS token used to access the deployment storage account"
+            }
+        },
+        "domainJoinPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Password for the domain join user (this password is in the key vault)"
+            }
+        },
+        "domainJoinUser": {
+            "type": "string",
+            "metadata": {
+                "description": "User that can join VMs to the domain"
+            }
+        },
+        "diskSku": {
+            "type": "string",
+            "metadata": {
+                "description": "Disk SKU used to determine disks types for the VMs"
+            }
+        },
+        "drSqlListenerSubnet": {
+            "type": "string",
+            "metadata": {
+                "description": "DR SQL Load Balancer listener subnet"
+            }
+        },
+        "drNode": {
+            "type": "bool",
+            "metadata": {
+                "description": "Indicates this is a DR deployment"
+            }
+        },
+        "drRegion": {
+            "type": "array",
+            "metadata": {
+                "description": "DR region info array- contains network info, region labels, etc"
+            }
+        },
+        "genericStorageAccountSasToken": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SAS token used to access generic storage account (for installation files)"
+            }
+        },
+        "gMsaSqlGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "AD Group that can access the gMSA accounts"
+            }
+        },
+        "imageOffer": {
+            "type": "String",
+            "defaultValue": "sql2019-ws2019",
+            "allowedValues": [
+                "sql2019-ws2019",
+                "sql2017-ws2019",
+                "SQL2017-WS2016",
+                "SQL2016SP1-WS2016",
+                "SQL2016SP2-WS2016",
+                "SQL2014SP3-WS2012R2",
+                "SQL2014SP2-WS2012R2"
+            ],
+            "metadata": {
+                "description": "Windows Server and SQL Offer"
+            }
+        },
+        "localAdminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Local admin password"
+            }
+        },
+        "localAdminUser": {
+            "type": "string",
+            "metadata": {
+                "description": "Local admin account that will be created on the VMs"
+            }
+        },
+        "###SystemTag": {
+            "type": "string",
+            "metadata": {
+                "description": "Tags that will be assigned at provisioning time"
+            }
+        },
+        "prRegion": {
+            "type": "array",
+            "metadata": {
+                "description": "Pimary region info array- contains network info, region labels, etc"
+            }
+        },
+        "series": {
+            "type": "string",
+            "metadata": {
+                "description": "Cluster series to deploy"
+            }
+        },
+        "sqlAdminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SQL admin password"
+            }
+        },
+        "sqlAdminUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL admin account that will be used during the SQL installation and configuration"
+            }
+        },
+        "targetOuPath": {
+            "type": "string",
+            "metadata": {
+                "description": "OU the machine will be moved into after deployment"
+            }
+        },
+        "storageAccountType": {
+            "type": "string",
+            "metadata": {
+                "description": "Storage account type to use- LRS, GRS, etc"
+            }
+        },
+        "sqlAgentUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Agent account used for the SQL Agent Service"
+            }
+        },
+        "sqlSvcUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Service account used SQL Engine Service"
+            }
+        },
+        "sqlSku": {
+            "type": "String",
+            "defaultValue": "SQLDEV",
+            "allowedValues": [
+            "Standard",
+            "Enterprise",
+            "SQLDEV",
+            "Web",
+            "Express"
+            ],
+            "metadata": {
+            "description": "SQL Server Sku"
+            }
+        },
+        "sqlListenerSubnet": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Load Balancer listener subnet"
+            }
+        },
+        "####Environment": {
+            "type": "string",
+            "metadata": {
+                "description": "#### Environment label- DEV,NPROD,PROD"
+            }
+        },
+        "vMsInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of server names and other metadata for SQL"
+            }
+        },
+        "vmSize": {
+            "type": "string",
+            "metadata": {
+                "description": "VM size for Application Server VMs"
+            }
+        },
+        "dscOnly": {
+            "type": "Bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "If set to True, only the DSC portions will run"
+            }
+        }
+    },
+    "variables": {
+        "configurationName": "ProvisionSqlVms",
+        "configurationFileName": "ProvisionSqlVms.ps1",
+        "deploymentStorageAccountSqlWitnessName": "[concat(toLower(parameters('deploymentStorageAccountName')), 'sw')]",
+        "domainJoinOptions": 3,
+        "provisionSqlDscConfigurationName": "provisionSqlDscConfiguration.json",
+        "provisionSqlDscResourcesName": "provisionSqlDscResources.json",
+        "provisionSqlNetworkName": "provisionSqlNetwork.json",
+        "dscConfigurationDeploymentName": "[concat(deployment().name, '_DscConfiguration')]",
+        "dscResourcesDeploymentName": "[concat(deployment().name, '_DscResources')]",
+        "networkDeploymentName": "[concat(deployment().name, '_Network')]",
+        "copy": [
+            {
+                "name": "sqlVmNames",
+                "count": "[length(parameters('vmsInfo'))]",
+                "input": "[parameters('vmsInfo')[copyIndex('sqlVmNames')].name]"
+            }
+        ],
+        "availabilitySetDrrName": "[concat('AES-', parameters('####Environment'), '-INT-', parameters('drRegion')[0], '-SQLDR-AS', parameters('series'))]",
+        "availabilitySetPriName": "[concat('AES-', parameters('####Environment'), '-INT-', parameters('prRegion')[0], '-SQLPR-AS', parameters('series'))]",
+        "clusterLbDrrName": "[concat('AES-', parameters('####Environment'), '-INT-', parameters('drRegion')[0], '-SQLDR-ILB', parameters('series'))]",
+        "clusterLbPriName": "[concat('AES-', parameters('####Environment'), '-INT-', parameters('prRegion')[0], '-SQLPR-ILB', parameters('series'))]",
+        "loadBalancerSku": "Standard",
+        "clusterName": "[concat('VAC', parameters('prRegion')[1], 'SCLUAES', parameters('series'))]",
+        "automationAccountName": "aes-prod-int-east-automation",
+        "automationAccountResourceGroup": "aes-prod-int-east-mgmt-rg",
+        "automationAccountLocation": "USGovVirginia",
+        "networkName": "[parameters('prRegion')[6]]",
+        "networkResourceGroupName": "[parameters('prRegion')[5]]",
+        "networkSubnetName": "[parameters('prRegion')[4]]",
+        "networkDrName": "[parameters('drRegion')[6]]",
+        "networkDrResourceGroupName": "[parameters('drRegion')[5]]",
+        "networkDrSubnetName": "[parameters('drRegion')[4]]",
+        "deploymentStorageContainerName": "aesdeploymentartifacts",
+        "domainGroupToAdd": "va.gov\\VA-Azure-EAS-VM Managers",
+        "domainName": "va.gov",
+        "genericStorageAccountName":  "aesdeveaststorgeneric",
+        "genericStorageContainerName": "provisioningfiles",
+        "genericStorageResourceGroupName": "AES-DEVTEST-INT-EAST-AES-RG",
+        "provisioningScriptFilename": "VMProvisioningScript-###.ps1",
+        "provisioningScriptURI": "https://coreinteastarm.blob.core.usgovcloudapi.net/templates/VMProvisioningScript-###.ps1?sv=2019-10-10&ss=b&srt=co&sp=rl&se=2030-10-24T09:20:55Z&st=2020-10-24T01:20:55Z&spr=https&sig=qbJe%2FEiSsa3p7gaznESpSD3dRPxbpHCfQMPLn3QS0R8%3D",
+        "resourceGroupName": "[resourceGroup().name]",
+        "stagingOuPath": "OU=Staging,OU=AES,OU=Servers,OU=Azure,OU=####,DC=va,DC=gov",
+        "subscriptionID": "241bf85b-51d9-45de-ae54-480774137c45",
+        "dataDisksLuns": "[array(range(0, sub(length(parameters('dataDiskInfo')), 1)))]",
+        "logDisksLuns": "[array(range(length(variables('dataDisksLuns')), length(parameters('dataDiskInfo'))))]",
+        "dataPath": "E:\\SQLData",
+        "tempDbPath": "S:\\SQLTemp",
+        "logPath": "F:\\SQLLog",
+        "storageWorkloadType": "General",
+        "diskConfigurationType": "NEW"
+    },
+    "resources": [
+        {
+            "name": "[toLower(parameters('deploymentStorageAccountName'))]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "location": "[resourceGroup().location]",
+            "apiVersion": "2018-07-01",
+            "condition": "[not(parameters('dscOnly'))]",
+            "sku": {
+                "name": "[parameters('storageAccountType')]"
+            },
+            "tags": {
+                "### System": "[parameters('###SystemTag')]"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "allowBlobPublicAccess": "false"
+            }
+        },
+        {
+            "name": "[variables('deploymentStorageAccountSqlWitnessName')]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "location": "[resourceGroup().location]",
+            "apiVersion": "2018-07-01",
+            "condition": "[not(parameters('dscOnly'))]",
+            "sku": {
+                "name": "[parameters('storageAccountType')]"
+            },
+            "tags": {
+                "### System": "[parameters('###SystemTag')]"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "allowBlobPublicAccess": "false"
+            }
+        },
+        {
+            "name": "[variables('availabilitySetPriName')]",
+            "type": "Microsoft.Compute/availabilitySets",
+            "location": "[resourceGroup().location]",
+            "apiVersion": "2018-10-01",
+            "condition": "[not(parameters('dscOnly'))]",
+            "sku": {
+                "name": "Aligned"
+            },
+            "tags": {},
+            "properties": {
+                "platformFaultDomainCount": 2,
+                "platformUpdateDomainCount": 5
+            }
+        },
+        {
+            "condition": "[and(not(empty(variables('availabilitySetDrrName'))), not(parameters('dscOnly')))]",
+            "name": "[variables('availabilitySetDrrName')]",
+            "type": "Microsoft.Compute/availabilitySets",
+            "location": "[parameters('drRegion')[2]]",
+            "apiVersion": "2018-10-01",
+            "sku": {
+                "name": "Aligned"
+            },
+            "tags": {},
+            "properties": {
+                "platformFaultDomainCount": 2,
+                "platformUpdateDomainCount": 5
+            }
+        },
+        {
+            "name": "[variables('dscResourcesDeploymentName')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2019-05-01",
+            "resourceGroup": "[variables('automationAccountResourceGroup')]",
+            "dependsOn": [
+                "[toLower(parameters('deploymentStorageAccountName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(reference(resourceId(variables('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountName')), '2018-07-01').primaryEndpoints.blob, variables('deploymentStorageContainerName'), '/nested/', variables('provisionSqlDscResourcesName'), parameters('deploymentStorageAccountSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "aesAdminGroup":{
+                        "value": "[parameters('aesAdminGroup')]"
+                    },
+                    "automationAccountLocation": {
+                        "value": "[variables('automationAccountLocation')]"
+                    },
+                    "automationAccountName": {
+                        "value": "[variables('automationAccountName')]"
+                    },
+                    "domainJoinPassword": {
+                        "value": "[parameters('domainJoinPassword')]"
+                    },
+                    "domainJoinUser": {
+                        "value": "[parameters('domainJoinUser')]"
+                    },
+                    "genericStorageSasToken": {
+                        "value": "[parameters('genericStorageAccountSasToken')]"
+                    },
+                    "genericStorageUrl": {
+                        "value": "[concat(reference(resourceId(variables('genericStorageResourceGroupName'), 'Microsoft.Storage/storageAccounts', variables('genericStorageAccountName')), '2018-07-01').primaryEndpoints.blob, variables('genericStorageContainerName'))]"
+                    },
+                    "gMsaSqlGroupName": {
+                        "value": "[parameters('gMsaSqlGroupName')]"
+                    },
+                    "localAdminPassword": {
+                        "value": "[parameters('localAdminPassword')]"
+                    },
+                    "localAdminUser": {
+                        "value": "[parameters('localAdminUser')]"
+                    },
+                    "sqlAdminPassword": {
+                        "value": "[parameters('sqlAdminPassword')]"
+                    },
+                    "sqlAdminUser": {
+                        "value": "[parameters('sqlAdminUser')]"
+                    },
+                    "sqlAgentUser": {
+                        "value": "[parameters('sqlAgentUser')]"
+                    },
+                    "sqlSvcUser": {
+                        "value": "[parameters('sqlSvcUser')]"
+                    },
+                    "stagingOuPath": {
+                        "value": "[variables('stagingOuPath')]"
+                    }
+                },
+                "tags": {}
+            }
+        },
+        {
+            "name": "[variables('dscConfigurationDeploymentName')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2019-05-01",
+            "resourceGroup": "[variables('automationAccountResourceGroup')]",
+            "dependsOn": [
+                "[toLower(parameters('deploymentStorageAccountName'))]",
+                "[variables('dscResourcesDeploymentName')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(reference(resourceId(variables('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountName')), '2018-07-01').primaryEndpoints.blob, variables('deploymentStorageContainerName'), '/nested/', variables('provisionSqlDscConfigurationName'), parameters('deploymentStorageAccountSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "agsInfoWithIps": {
+                        "value": "[reference(resourceId('Microsoft.Resources/deployments', variables('NetworkDeploymentName')), '2019-05-01').outputs.agsInfoWithIps.value]"
+                    },
+                    "automationAccountLocation": {
+                        "value": "[variables('automationAccountLocation')]"
+                    },
+                    "automationAccountName": {
+                        "value": "[variables('automationAccountName')]"
+                    },
+                    "clusterName": {
+                        "value": "[variables('clusterName')]"
+                    },
+                    "configurationName": {
+                        "value": "[variables('configurationName')]"
+                    },
+                    "deploymentStorageAccountSqlWitnessName": {
+                        "value": "[variables('deploymentStorageAccountSqlWitnessName')]"
+                    },
+                    "dscConfigurationFileUri": {
+                        "value": "[concat(reference(resourceId(variables('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountName')), '2018-07-01').primaryEndpoints.blob, variables('deploymentStorageContainerName'), '/DSC/' , variables('configurationFileName'), parameters('deploymentStorageAccountSasToken'))]"
+                    },
+                    "drSqlListenerSubnet": {
+                        "value": "[parameters('drSqlListenerSubnet')]"
+                    },
+                    "resourceGroupName": {
+                        "value": "[variables('resourceGroupName')]"
+                    },
+                    "sqlVmNames": {
+                        "value": "[variables('sqlVmNames')]"
+                    },
+                    "sqlListenerSubnet": {
+                        "value": "[parameters('sqlListenerSubnet')]"
+                    },
+                    "targetOuPath": {
+                        "value": "[parameters('targetOuPath')]"
+                    },
+                    "vMsInfo": {
+                        "value": "[parameters('vMsInfo')]"
+                    }
+                },
+                "tags": {}
+            }
+        },
+        {
+            "name": "[variables('networkDeploymentName')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2019-05-01",
+            "condition": "[not(parameters('dscOnly'))]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[concat(reference(resourceId(variables('resourceGroupName'), 'Microsoft.Storage/storageAccounts', parameters('deploymentStorageAccountName')), '2018-07-01').primaryEndpoints.blob, variables('deploymentStorageContainerName'), '/nested/', variables('provisionSqlNetworkName'), parameters('deploymentStorageAccountSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "agsInfo": {
+                        "value": "[parameters('agsInfo')]"
+                    },
+                    "clusterLbPriName": {
+                        "value": "[variables('clusterLbPriName')]"
+                    },
+                    "disasterRecoveryRegion": {
+                        "value": "[parameters('drRegion')[2]]"
+                    },
+                    "drNode": {
+                        "value": "[parameters('drNode')]"
+                    },
+                    "clusterLbDrrName": {
+                        "value": "[variables('clusterLbDrrName')]"
+                    },
+                    "loadBalancerSku": {
+                        "value": "[variables('loadBalancerSku')]"
+                    },
+                    "networkDrName": {
+                        "value": "[variables('networkDrName')]"
+                    },
+                    "networkDrResourceGroupName": {
+                        "value": "[variables('networkDrResourceGroupName')]"
+                    },
+                    "networkDrSubnetName": {
+                        "value": "[variables('networkDrSubnetName')]"
+                    },
+                    "networkName": {
+                        "value": "[variables('networkName')]"
+                    },
+                    "networkResourceGroupName": {
+                        "value": "[variables('networkResourceGroupName')]"
+                    },
+                    "vMsInfo": {
+                        "value": "[parameters('vMsInfo')]"
+                    },
+                    "networkSubnetName": {
+                        "value": "[variables('networkSubnetName')]"
+                    },
+                    "subscriptionID": {
+                        "value": "[variables('subscriptionID')]"
+                    }
+                }
+            }
+        },
+        {
+            "name": "[parameters('vMsInfo')[copyIndex('sqlVmLoop')].name]",
+            "type": "Microsoft.Compute/virtualMachines",
+            "location": "[parameters('vMsInfo')[copyIndex()].location]",
+            "apiVersion": "2020-06-01",
+            "condition": "[not(parameters('dscOnly'))]",
+            "copy": {
+                "count": "[length(parameters('vMsInfo'))]",
+                "name": "sqlVmLoop"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/availabilitySets', if(not(equals(parameters('vMsInfo')[copyIndex()].drNode, 'true')), variables('availabilitySetPriName'), variables('availabilitySetDrrName')))]",
+                "[variables('dscConfigurationDeploymentName')]",
+                "[variables('networkDeploymentName')]"
+            ],
+            "tags": {},
+            "properties": {
+                "licenseType": "Windows_Server",
+                "hardwareProfile": {
+                    "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                    "computerName": "[parameters('vMsInfo')[copyIndex()].name]",
+                    "adminUsername": "[parameters('localAdminUser')]",
+                    "adminPassword": "[parameters('localAdminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftSQLServer",
+                        "offer": "[parameters('imageOffer')]",
+                        "sku": "[parameters('sqlSku')]",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(parameters('vMsInfo')[copyIndex()].name, '_OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "diskSizeGB": 128,
+                        "managedDisk": {
+                            "storageAccountType": "[parameters('diskSku')]"
+                        }
+                    },
+                    "copy": [
+                        {
+                            "name": "dataDisks",
+                            "count": "[length(parameters('dataDiskInfo'))]",
+                            "input": {
+                                "name": "[concat(parameters('vMsInfo')[copyIndex('sqlVmLoop')].name, '_', parameters('dataDiskInfo')[copyIndex('dataDisks')].label, '_Disk')]",
+                                "lun": "[copyIndex('dataDisks')]",
+                                "createOption": "empty",
+                                "caching": "[parameters('dataDiskInfo')[copyIndex('dataDisks')].caching]",
+                                "writeAcceleratorEnabled": false,
+                                "diskSizeGB": "[parameters('dataDiskInfo')[copyIndex('dataDisks')].diskSizeGB]",
+                                "managedDisk": {
+                                    "storageAccountType": "[parameters('diskSku')]"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vMsInfo')[copyIndex()].name, '_NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true
+                    }
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', if(not(equals(parameters('vMsInfo')[copyIndex()].drNode, 'true')), variables('availabilitySetPriName'), variables('availabilitySetDrrName')))]"
+                }
+            },
+            "resources": [
+                {
+                    "name": "DomainJoin",
+                    "type": "extensions",
+                    "location": "[parameters('vMsInfo')[copyIndex()].location]",
+                    "apiVersion": "2019-03-01",
+                    "condition": "[not(parameters('dscOnly'))]",
+                    "dependsOn": [
+                        "[concat('Microsoft.Compute/virtualMachines/', parameters('vMsInfo')[copyIndex()].name)]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Compute",
+                        "type": "JsonADDomainExtension",
+                        "typeHandlerVersion": "1.3",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "Name": "[variables('domainName')]",
+                            "OuPath": "[variables('stagingOuPath')]",
+                            "User": "[parameters('domainJoinUser')]",
+                            "Restart": "true",
+                            "Options": "[variables('domainJoinOptions')]"
+                        },
+                        "protectedSettings": {
+                            "Password": "[parameters('domainJoinPassword')]"
+                        }
+                    }
+                },
+                {
+                    "name": "CRISPComponents",
+                    "type": "extensions",
+                    "location": "[parameters('vMsInfo')[copyIndex()].location]",
+                    "apiVersion": "2019-03-01",
+                    "condition": "[not(parameters('dscOnly'))]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', parameters('vMsInfo')[copyIndex()].name)]",
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions/', parameters('vMsInfo')[copyIndex()].name, 'DomainJoin')]"
+                    ],
+                    "tags": {},
+                    "properties": {
+                        "publisher": "Microsoft.Compute",
+                        "type": "CustomScriptExtension",
+                        "typeHandlerVersion": "1.4",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "fileUris": [
+                                "[variables('provisioningScriptURI')]"
+                            ],
+                            "commandToExecute": "[concat('powershell -ExecutionPolicy Unrestricted -File ', './', variables('provisioningScriptFileName'), ' ', '\"', variables('domainGroupToAdd'), '\"')]"
+                        }
+                    }
+                },
+                {
+                    "name": "Microsoft.Powershell.DSC",
+                    "type": "extensions",
+                    "apiVersion": "2017-12-01",
+                    "location": "[parameters('vMsInfo')[copyIndex()].location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', parameters('vMsInfo')[copyIndex()].name)]",
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions/', parameters('vMsInfo')[copyIndex()].name, 'DomainJoin')]",
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions/', parameters('vMsInfo')[copyIndex()].name, 'CRISPComponents')]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.8",
+                        "autoUpgradeMinorVersion": true,
+                        "protectedSettings": {
+                            "Items": {
+                                "registrationKeyPrivate": "[listKeys(resourceId(variables('automationAccountResourceGroup'), 'Microsoft.Automation/automationAccounts/', variables('automationAccountName')), '2018-01-15').Keys[0].value]"
+                            }
+                        },
+                        "settings": {
+                            "Properties": [
+                                {
+                                    "Name": "RegistrationKey",
+                                    "Value": {
+                                        "UserName": "PLACEHOLDER_DONOTUSE",
+                                        "Password": "PrivateSettingsRef:registrationKeyPrivate"
+                                    },
+                                    "TypeName": "System.Management.Automation.PSCredential"
+                                },
+                                {
+                                    "Name": "RegistrationUrl",
+                                    "Value": "[reference(resourceId(variables('automationAccountResourceGroup'), 'Microsoft.Automation/automationAccounts/', variables('automationAccountName')), '2018-01-15').registrationUrl]",
+                                    "TypeName": "System.String"
+                                },
+                                {
+                                    "Name": "NodeConfigurationName",
+                                    "Value": "[concat(variables('configurationName'), '.', parameters('vMsInfo')[copyIndex()].name)]",
+                                    "TypeName": "System.String"
+                                },
+                                {
+                                    "Name": "ConfigurationMode",
+                                    "Value": "ApplyandAutoCorrect",
+                                    "TypeName": "System.String"
+                                },
+                                {
+                                    "Name": "RebootNodeIfNeeded",
+                                    "Value": true,
+                                    "TypeName": "System.Boolean"
+                                },
+                                {
+                                    "Name": "AllowModuleOverwrite",
+                                    "Value": true,
+                                    "TypeName": "System.Boolean"
+                                },
+                                {
+                                    "Name": "ActionAfterReboot",
+                                    "Value": "ContinueConfiguration",
+                                    "TypeName": "System.String"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "[parameters('vMsInfo')[copyIndex('sqlVmLoop')].name]",
+            "type": "Microsoft.SqlVirtualMachine/SqlVirtualMachines",
+            "location": "[parameters('vMsInfo')[copyIndex()].location]",
+            "apiVersion": "2017-03-01-preview",
+            "condition": "[not(parameters('dscOnly'))]",
+            "copy": {
+                "count": "[length(parameters('vMsInfo'))]",
+                "name": "sqlVmLoop"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('vMsInfo')[copyIndex('sqlVmLoop')].name)]"
+            ],
+            "properties": {
+                "virtualMachineResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vMsInfo')[copyIndex('sqlVmLoop')].name)]",
+                "sqlManagement": "Full",
+                "sqlImageSku": "Enterprise",
+                "SqlServerLicenseType": "[if(equals(parameters('vMsInfo')[copyIndex('sqlVmLoop')].drNode, 'false'), 'AHUB', 'DR')]",
+                "StorageConfigurationSettings": {
+                    "DiskConfigurationType": "[variables('diskConfigurationType')]",
+                    "StorageWorkloadType": "[variables('storageWorkloadType')]",
+                    "SQLDataSettings": {
+                        "LUNs": "[variables('dataDisksLUNs')]",
+                        "DefaultFilePath": "[variables('dataPath')]"
+                    },
+                    "SQLLogSettings": {
+                        "Luns": "[variables('logDisksLUNs')]",
+                        "DefaultFilePath": "[variables('logPath')]"
+                    },
+                    "SQLTempDbSettings": {
+                        "DefaultFilePath": "[variables('tempDbPath')]"
+                    }
+                }
+            }
+        }
+    ],
+    "outputs": {
+    }
+}

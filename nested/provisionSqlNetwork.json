@@ -1,0 +1,304 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "location": {
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]"
+        },
+        "agsInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Hashtable of properties used to deploy and configure the SQL AGs"
+            }
+        },
+        "clusterLbPriName": {
+            "type": "string",
+            "metadata": {
+                "description": "Cluster LB name in primary region"
+            }
+        },
+        "clusterLbDrrName": {
+            "type": "string",
+            "metadata": {
+                "description": "Cluster LB name in DR region"
+            }
+        },
+        "disasterRecoveryRegion": {
+            "type": "string",
+            "metadata": {
+                "description": "DR region used to deploy DR node into"
+            }
+        },
+        "drNode": {
+            "type": "bool",
+            "metadata": {
+                "description": "Indicates this is a DR deployment"
+            }
+        },
+        "networkDrName": {
+            "type": "string",
+            "metadata": {
+                "description": "Network name in DR region"
+            }
+        },
+        "networkDrResourceGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "Network resource group name in DR region"
+            }
+        },
+        "networkDrSubnetName": {
+            "type": "string",
+            "metadata": {
+                "description": "Subnet name in DR region"
+            }
+        },
+        "loadBalancerSku": {
+            "type": "string",
+            "metadata": {
+                "description": "SKU for the load balancer- basic or standard"
+            }
+        },
+        "networkName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the main VNET being deployed into"
+            }
+        },
+        "networkResourceGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Resource Group that contains the network resources"
+            }
+        },
+        "vMsInfo": {
+            "type": "array",
+            "metadata": {
+                "description": "Array of Hashtables containing SQL VM names, SQL roles, location, etc"
+            }
+        },
+        "networkSubnetName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the subnet the VM is being deployed into"
+            }
+        },
+        "subscriptionID": {
+            "type": "string",
+            "metadata": {
+                "description": "subscription to deploy in"
+            }
+        }
+    },
+    "variables": {
+        "resourceGroupName": "[resourceGroup().name]",
+        "clusterBeAddressPoolId": "[concat(variables('clusterLBID'), '/backendAddressPools/', concat(parameters('clusterLbPriName'), '_BackendPool'))]",
+        "clusterLBID": "[resourceId('Microsoft.Network/loadBalancers', parameters('clusterLbPriName'))]",
+        "drClusterBeAddressPoolId": "[concat(variables('drClusterLBID'), '/backendAddressPools/', concat(parameters('clusterLbDrrName'), '_BackendPool'))]",
+        "drClusterLBID": "[resourceId('Microsoft.Network/loadBalancers', parameters('clusterLbDrrName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "apiVersion": "2019-02-01",
+            "name": "[parameters('clusterLbPriName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [],
+            "tags": {},
+            "sku": {
+                "name": "[parameters('loadBalancerSku')]",
+                "tier": "Regional"
+            },
+            "properties": {
+                "copy": [
+                    {
+                        "name": "loadBalancingRules",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_Rule')]",
+                            "properties": {
+                                "frontendIPConfiguration": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers', parameters('clusterLbPriName')), '/frontendIPConfigurations/', parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_IP')]"
+                                },
+                                "frontendPort": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].sqlPort]",
+                                "backendPort": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].sqlPort]",
+                                "enableFloatingIP": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].enableFloatingIP]",
+                                "idleTimeoutInMinutes": 4,
+                                "protocol": "Tcp",
+                                "enableTcpReset": false,
+                                "loadDistribution": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].loadDistribution]",
+                                "backendAddressPool": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers', parameters('clusterLbPriName')), '/backendAddressPools/', parameters('clusterLbPriName'), '_BackendPool')]"
+                                },
+                                "probe": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers', parameters('clusterLbPriName')), '/probes/', parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_HealthProbe')]"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "frontendIPConfigurations",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('frontendIPConfigurations')].listenerName, '_IP')]",
+                            "properties": {
+                                "privateIPAllocationMethod": "Dynamic",
+                                "subnet": {
+                                    "id": "[resourceId(parameters('subscriptionID'), parameters('networkResourceGroupName'), 'Microsoft.Network/virtualNetworks/subnets', parameters('networkName'), parameters('networkSubnetName'))]"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "probes",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('probes')].listenerName, '_HealthProbe')]",
+                            "properties": {
+                                "protocol": "Tcp",
+                                "port": "[parameters('agsInfo')[copyIndex('probes')].probePort]",
+                                "intervalInSeconds": 5,
+                                "numberOfProbes": 2
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[concat(parameters('clusterLbPriName'), '_BackendPool')]"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "apiVersion": "2019-02-01",
+            "name": "[parameters('clusterLbDrrName')]",
+            "location": "[parameters('disasterRecoveryRegion')]",
+            "condition": "[parameters('drNode')]",
+            "dependsOn": [
+            ],
+            "tags": {},
+            "sku": {
+                "name": "[parameters('loadBalancerSku')]",
+                "tier": "Regional"
+            },
+            "properties": {
+                "copy": [
+                    {
+                        "name": "loadBalancingRules",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_Rule')]",
+                            "properties": {
+                                "frontendIPConfiguration": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers', parameters('clusterLbDrrName')), '/frontendIPConfigurations/', parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_DR_IP')]"
+                                },
+                                "frontendPort": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].sqlPort]",
+                                "backendPort": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].sqlPort]",
+                                "enableFloatingIP": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].enableFloatingIP]",
+                                "idleTimeoutInMinutes": 4,
+                                "protocol": "Tcp",
+                                "enableTcpReset": false,
+                                "loadDistribution": "[parameters('agsInfo')[copyIndex('loadBalancingRules')].loadDistribution]",
+                                "backendAddressPool": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers/', parameters('clusterLbDrrName')), '/backendAddressPools/', parameters('clusterLbDrrName'), '_BackendPool')]"
+                                },
+                                "probe": {
+                                    "id": "[concat(resourceId(parameters('subscriptionID'), variables('resourceGroupName'), 'Microsoft.Network/loadBalancers/', parameters('clusterLbDrrName')), '/probes/', parameters('agsInfo')[copyIndex('loadBalancingRules')].listenerName, '_DR_HealthProbe')]"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "frontendIPConfigurations",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('frontendIPConfigurations')].listenerName, '_DR_IP')]",
+                            "properties": {
+                                "privateIPAllocationMethod": "Dynamic",
+                                "subnet": {
+                                    "id": "[resourceId(parameters('subscriptionID'), parameters('networkDrResourceGroupName'), 'Microsoft.Network/virtualNetworks/subnets', parameters('networkDrName'), parameters('networkDrSubnetName'))]"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "probes",
+                        "count": "[length(parameters('agsInfo'))]",
+                        "input": {
+                            "name": "[concat(parameters('agsInfo')[copyIndex('probes')].listenerName, '_DR_HealthProbe')]",
+                            "properties": {
+                                "protocol": "Tcp",
+                                "port": "[parameters('agsInfo')[copyIndex('probes')].probePort]",
+                                "intervalInSeconds": 5,
+                                "numberOfProbes": 2
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[concat(parameters('clusterLbDrrName'), '_BackendPool')]"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[concat(parameters('vMsInfo')[copyIndex()].name, '_NIC')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "comments": "SQL Server Network Interface Loop",
+            "location": "[parameters('vMsInfo')[copyIndex()].location]",
+            "apiVersion": "2020-08-01",
+            "copy": {
+                "count": "[length(parameters('vMsInfo'))]",
+                "name": "sqlNicLoop"
+            },
+            "dependsOn": [
+                "[parameters('clusterLbPriName')]"
+            ],
+            "tags": {},
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "[concat(parameters('vMsInfo')[copyIndex()].name, '_IP')]",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[if(not(equals(parameters('vMsInfo')[copyIndex()].drNode, 'true')), concat('/subscriptions/', parameters('subscriptionID'), '/resourceGroups/', parameters('networkResourceGroupName'),'/providers/Microsoft.Network/virtualNetworks/', parameters('networkName'), '/subnets/', parameters('networkSubnetName')), concat('/subscriptions/', parameters('subscriptionID'), '/resourceGroups/', parameters('networkDrResourceGroupName'),'/providers/Microsoft.Network/virtualNetworks/', parameters('networkDrName'), '/subnets/', parameters('networkDrSubnetName')))]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[if(not(equals(parameters('vMsInfo')[copyIndex()].drNode, 'true')), variables('clusterBeAddressPoolId'), variables('drClusterBeAddressPoolId'))]"
+                                }
+                            ],
+                            "primary": true,
+                            "privateIPAddressVersion": "IPv4"
+                        }
+                    }
+                ],
+                "enableAcceleratedNetworking": true
+            }
+        }
+    ],
+    "outputs": {
+        "agsInfoWithIps":{
+            "type": "array",
+            "copy": {
+                "count": "[length(parameters('agsInfo'))]",
+                "input": {
+                    "agName": "[parameters('agsInfo')[copyIndex()].agName]",
+                    "primaryReplicaName": "[parameters('agsInfo')[copyIndex()].primaryReplicaName]",
+                    "listenerName": "[parameters('agsInfo')[copyIndex()].listenerName]",
+                    "ipAddress": "[reference(parameters('clusterLbPriName')).frontendIPConfigurations[copyIndex()].properties.privateIPAddress]",
+                    "drIpAddress": "[if(parameters('drNode'), coalesce(reference(parameters('clusterLbDrrName')).frontendIPConfigurations[copyIndex()].properties.privateIPAddress, ''), '')]",
+                    "enableFloatingIP": "[parameters('agsInfo')[copyIndex()].enableFloatingIP]",
+                    "sqlPort": "[parameters('agsInfo')[copyIndex()].sqlPort]",
+                    "probePort": "[parameters('agsInfo')[copyIndex()].probePort]",
+                    "loadDistribution": "[parameters('agsInfo')[copyIndex()].loadDistribution]"
+                }
+            }
+        }
+    }
+}

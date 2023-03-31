@@ -1,0 +1,290 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "###AdminGroup": {
+            "type": "string",
+            "metadata": {
+                "description": "Admin Group to be used to manage the servers"
+            }
+        },
+        "automationAccountLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "Automation Account location (Virginia, TX, etc)"
+            }
+        },
+        "automationAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Automation Account"
+            }
+        },
+        "domainJoinPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SQL admin password"
+            }
+        },
+        "domainJoinUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL admin account that will be used during the SQL installation and configuration"
+            }
+        },
+        "genericStorageSasToken": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SAS token used to download provisioning files"
+            }
+        },
+        "genericStorageUrl": {
+            "type": "string",
+            "metadata": {
+                "description": "URL for the provisioning storage account"
+            }
+        },
+        "gMsaSqlGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "gMSA AD group used to allow servers to use the gMSA"
+            }
+        },
+        "localAdminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Local admin password"
+            }
+        },
+        "localAdminUser": {
+            "type": "string",
+            "metadata": {
+                "description": "Local admin account"
+            }
+        },
+        "sqlAdminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SQL admin password"
+            }
+        },
+        "sqlAdminUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL admin account that will be used during the SQL installation and configuration"
+            }
+        },
+        "sqlAgentUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Agent account used for the SQL Agent Service"
+            }
+        },
+        "sqlSvcUser": {
+            "type": "string",
+            "metadata": {
+                "description": "SQL Service account used SQL Engine Service"
+            }
+        },
+        "stagingOuPath": {
+            "type": "string",
+            "metadata": {
+                "description": "OU the AD Objects will be in during provisioning"
+            }
+        }
+    },
+    "variables": {
+    },
+    "resources": [
+        {
+            "name": "[parameters('automationAccountName')]",
+            "type": "Microsoft.Automation/automationAccounts",
+            "apiversion": "2018-01-15",
+            "location": "[parameters('automationAccountLocation')]",
+            "comments": "Automation account for ###",
+            "properties": {
+                "sku": {
+                    "name": "Basic",
+                    "family": null,
+                    "capacity": null
+                }
+            },
+            "resources":[
+                {
+                    "name": "domainJoinCred",
+                    "type": "credentials",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "userName": "[parameters('domainJoinUser')]",
+                        "password": "[parameters('domainJoinPassword')]"
+                    }
+                },
+                {
+                    "name": "localAdminCred",
+                    "type": "credentials",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "userName": "[parameters('localAdminUser')]",
+                        "password": "[parameters('localAdminPassword')]"
+                    }
+                },
+                {
+                    "name": "sqlAdminCred",
+                    "type": "credentials",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "userName": "[parameters('sqlAdminUser')]",
+                        "password": "[parameters('sqlAdminPassword')]"
+                    }
+                },
+                {
+                    "name": "SqlServerDSC",
+                    "type": "modules",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "contentLink": {
+                            "uri": "https://psg-prod-eastus.azureedge.net/packages/sqlserverdsc.15.1.0.nupkg"
+                        }
+                    }
+                },
+                {
+                    "name": "StorageDsc",
+                    "type": "modules",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "contentLink": {
+                            "uri": "https://psg-prod-eastus.azureedge.net/packages/storagedsc.5.0.0.nupkg"
+                        }
+                    }
+                },
+                {
+                    "name": "xFailOverCluster",
+                    "type": "modules",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "contentLink": {
+                            "uri": "https://psg-prod-eastus.azureedge.net/packages/xfailovercluster.1.14.1.nupkg"
+                        }
+                    }
+                },
+                {
+                    "name": "MyAppAdminGroup",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', replace(parameters('###AdminGroup'),  '\\', '\\\\'), '\"')]",
+                        "description": "Admin Group to be used to manage the servers"
+                    }
+                },
+                {
+                    "name": "genericStorageSasToken",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', parameters('genericStorageSasToken'), '\"')]",
+                        "description": "SAS token used to download provisioning files"
+                    }
+                },
+                {
+                    "name": "genericStorageUrl",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', parameters('genericStorageUrl'), '\"')]",
+                        "description": "URL for the provisioning storage account"
+                    }
+                },
+                {
+                    "name": "gMsaSqlGroupName",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', parameters('gMsaSqlGroupName'), '\"')]",
+                        "description": "gMSA AD group used to allow servers to use the gMSA"
+                    }
+                },
+                {
+                    "name": "sqlAgentUser",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', replace(parameters('sqlAgentUser'),  '\\', '\\\\'), '\"')]",
+                        "description": "gMsa username for SQL agent account"
+                    }
+                },
+                {
+                    "name": "sqlSvcUser",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', replace(parameters('sqlSvcUser'),  '\\', '\\\\'), '\"')]",
+                        "description": "gMsa username for SQL service account"
+                    }
+                },
+                {
+                    "name": "stagingOuPath",
+                    "type": "variables",
+                    "apiVersion": "2018-01-15",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[parameters('AutomationAccountName')]"
+                    ],
+                    "properties": {
+                        "value": "[concat('\"', parameters('stagingOuPath'), '\"')]",
+                        "description": "OU the AD Objects will be moved to after provisioning"
+                    }
+                }
+            ]
+        }
+    ],
+    "outputs": {
+    }
+}
