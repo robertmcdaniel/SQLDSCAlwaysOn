@@ -34,9 +34,9 @@ Set-StrictMode -Version 3
 [string] $DSCSourceFolder = 'DSC'
 [string] $TemplateFile = '.\sqlDeploy.json'
 [string] $abcOuPath = ",OU=abc,OU=Servers,OU=Azure,OU=abc,DC=mydc,DC=gov"
-[string] $GenericStorageAccountName = "xxxdeveaststorgeneric"
+[string] $GenericStorageAccountName = "abcdeveaststorgeneric"
 [string] $GenericStorageContainerName = "provisioningfiles"
-[string] $DeploymentStorageContainerName = "xxxdeploymentartifacts"
+[string] $DeploymentStorageContainerName = "abcdeploymentartifacts"
 [string] $AutomationAccountName = "abc-prod-int-east-automation"
 [string] $AutomationAccountResourceGroup = "abc-prod-int-east-mgmt-rg"
 
